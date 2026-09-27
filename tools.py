@@ -25,37 +25,36 @@ if not ASTROLOGY_API_USER_ID or not ASTROLOGY_API_KEY:
     )
 
 
-def get_weather(location: str) -> str:
-    """Get the current weather for a location."""
-    try:
-        places = requests.get(GEOCODE_URL, params={"name": location, "count": 1}, timeout=10).json()
-        if not places.get("results"):
-            return json.dumps({"error": f"City '{location}' was not found."})
-        place = places["results"][0]
-
-        current = requests.get(
-            FORECAST_URL,
-            params={
-                "latitude": place["latitude"],
-                "longitude": place["longitude"],
-                "current": "temperature_2m,relative_humidity_2m,wind_speed_10m",
-                "temperature_unit": "fahrenheit",
-                "wind_speed_unit": "mph",
-            },
-            timeout=10,
-        ).json()["current"]
-    except requests.RequestException as e:
-        # The model cannot see an exception. Return something it can reason about.
-        return json.dumps({"error": f"Weather service failed: {e}"})
-
-    return json.dumps({
-        "location": place["name"],
-        "temp_f": current["temperature_2m"],
-        "humidity": current["relative_humidity_2m"],
-        "wind_mph": current["wind_speed_10m"],
-    })
-
 # Tool 1: External Tool 
+TRANSITS_SCHEMA = {
+        "type": "function",
+        "function": {
+            "name": "get_current_transits",
+            "description": (
+                "Fetches the real current positions of the Sun, Moon, and planets "
+                "(zodiac sign, degree, and whether retrograde) for a given date. "
+                "Use this whenever the user asks what's happening in the sky right now, "
+                "whether a planet is retrograde, or as grounding data before giving "
+                "horoscope-style or decision-timing advice. Never guess planetary "
+                "positions yourself — always call this tool first to get real data."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_date": {
+                        "type": "string",
+                        "description": (
+                            "Date to check, in YYYY-MM-DD format. Defaults to today "
+                            "if not provided."
+                        ),
+                    },
+                },
+                "required": [],
+            },
+        },
+    }
+
+
 def get_current_transits(target_date: str = None) -> dict:
     """Calls the astrology API for current planetary positions.
 
@@ -190,50 +189,80 @@ def compatibility_score(sign_a: str, sign_b: str, context: str) -> dict:
     }
 
 
+# Tool 3: Unique Tool 2
+DECISION_SCHEMA = {
+    "name": "decision_timing_advisor",
+    "description": (
+        "Given a type of decision the user is considering (e.g. 'send_message', "
+        "'ask_for_raise', 'start_new_project', 'have_hard_conversation') and their "
+        "zodiac sign, cross-references the CURRENT planetary transits against a "
+        "rules table to recommend proceeding, waiting, or proceeding with caution — "
+        "with reasoning. Always call get_current_transits first and pass its result "
+        "into current_transits."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "decision_type": {
+                "type": "string",
+                "enum": ["send_message", "ask_for_raise", "start_new_project",
+                         "have_hard_conversation", "make_purchase", "sign_contract"],
+            },
+            "sign": {"type": "string", "description": "The user's zodiac sign."},
+            "current_transits": {
+                "type": "array",
+                "description": "The 'transits' list returned by get_current_transits.",
+                "items": {"type": "object"},
+            },
+        },
+        "required": ["decision_type", "sign", "current_transits"],
+    },
+}
+
+# Rules: which planet-in-retrograde flags matter for which decision type, and why
+RETROGRADE_FLAGS = {
+    "send_message": {"Mercury": "Mercury retrograde is linked to miscommunication — messages can land wrong or get misread."},
+    "have_hard_conversation": {"Mercury": "Conversations risk being misunderstood during Mercury retrograde."},
+    "sign_contract": {"Mercury": "Mercury retrograde is traditionally considered risky for contracts and agreements — reread the fine print."},
+    "start_new_project": {"Mars": "Mars retrograde can drain momentum on new initiatives — energy may fizzle."},
+    "ask_for_raise": {"Venus": "Venus retrograde can complicate negotiations around value and money."},
+    "make_purchase": {"Venus": "Venus retrograde is associated with buyer's remorse — reconsider big purchases."},
+}
+
+def decision_timing_advisor(decision_type: str, sign: str, current_transits: list) -> dict:
+    if decision_type not in RETROGRADE_FLAGS:
+        return {"error": f"Unknown decision_type '{decision_type}'. "
+                          f"Use one of: {', '.join(RETROGRADE_FLAGS)}."}
+    if not current_transits:
+        return {"error": "current_transits was empty — call get_current_transits first "
+                          "and pass its 'transits' list here."}
+
+    relevant_flags = RETROGRADE_FLAGS[decision_type]
+    triggered = []
+    for t in current_transits:
+        planet = t.get("planet")
+        if planet in relevant_flags and t.get("retrograde"):
+            triggered.append({"planet": planet, "reason": relevant_flags[planet]})
+
+    if triggered:
+        verdict = "wait" if len(triggered) > 1 else "proceed_with_caution"
+    else:
+        verdict = "proceed"
+
+    return {
+        "decision_type": decision_type,
+        "sign": sign,
+        "verdict": verdict,
+        "flags_triggered": triggered,
+        "note": ("No retrograde flags relevant to this decision right now."
+                  if not triggered else None),
+    }
+
 # What the model sees: the "set notes" in the screenplay.
 TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_weather",
-            "description": "Get the current weather (temperature, humidity, wind) for a city.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {"type": "string", "description": "City name, e.g. 'New York'"},
-                },
-                "required": ["location"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_current_transits",
-            "description": (
-                "Fetches the real current positions of the Sun, Moon, and planets "
-                "(zodiac sign, degree, and whether retrograde) for a given date. "
-                "Use this whenever the user asks what's happening in the sky right now, "
-                "whether a planet is retrograde, or as grounding data before giving "
-                "horoscope-style or decision-timing advice. Never guess planetary "
-                "positions yourself — always call this tool first to get real data."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "target_date": {
-                        "type": "string",
-                        "description": (
-                            "Date to check, in YYYY-MM-DD format. Defaults to today "
-                            "if not provided."
-                        ),
-                    },
-                },
-                "required": [],
-            },
-        },
-    },
+    TRANSITS_SCHEMA,
     COMPATIBILITY_SCHEMA,
+    DECISION_SCHEMA,
 ]
 
 # What the harness runs: tool name -> Python function.
@@ -241,6 +270,7 @@ TOOL_MAP = {
     "get_weather": get_weather,
     "get_current_transits": get_current_transits,
     "compatibility_score": compatibility_score,
+    "decision_timing_advisor": decision_timing_advisor,
 }
 
 
