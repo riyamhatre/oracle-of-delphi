@@ -218,6 +218,7 @@ def compatibility_score(sign_a: str, sign_b: str, context: str) -> dict:
         },
     }
 
+
 # Tool 3: Unique Tool 2
 DECISION_SCHEMA = {
     "name": "decision_timing_advisor",
