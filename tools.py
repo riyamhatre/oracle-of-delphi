@@ -1,99 +1,99 @@
-"""The tools the harness can run, and the JSON that describes them to the model."""
-
-import json
-
-import requests
-
-from datetime import date
 import os
-from dotenv import load_dotenv
+import json
+import requests
+from datetime import date
 
-load_dotenv()  # reads .env into environment variables
+# ---- Tool 1: External Tool (OpenEphemeris) ----
 
-# Open-Meteo is free and needs no API key.
-GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
-FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+OPENEPHEMERIS_API_KEY = os.environ.get("OPENEPHEMERIS_API_KEY")
 
-
-ASTROLOGY_API_USER_ID = os.environ.get("ASTROLOGY_API_USER_ID")
-ASTROLOGY_API_KEY = os.environ.get("ASTROLOGY_API_KEY")
-
-if not ASTROLOGY_API_USER_ID or not ASTROLOGY_API_KEY:
+if not OPENEPHEMERIS_API_KEY:
     raise RuntimeError(
-        "Missing ASTROLOGY_API_USER_ID or ASTROLOGY_API_KEY. "
-        "Set them in a .env file or your environment before starting the server."
+        "Missing OPENEPHEMERIS_API_KEY. Set it in a .env file or your "
+        "environment before starting the server."
     )
 
+OPENEPHEMERIS_URL = "https://api.openephemeris.com/ephemeris/natal-chart"
 
-def get_weather(location: str) -> str:
-    """Get the current weather for a location."""
-    try:
-        places = requests.get(GEOCODE_URL, params={"name": location, "count": 1}, timeout=10).json()
-        if not places.get("results"):
-            return json.dumps({"error": f"City '{location}' was not found."})
-        place = places["results"][0]
 
-        current = requests.get(
-            FORECAST_URL,
-            params={
-                "latitude": place["latitude"],
-                "longitude": place["longitude"],
-                "current": "temperature_2m,relative_humidity_2m,wind_speed_10m",
-                "temperature_unit": "fahrenheit",
-                "wind_speed_unit": "mph",
-            },
-            timeout=10,
-        ).json()["current"]
-    except requests.RequestException as e:
-        # The model cannot see an exception. Return something it can reason about.
-        return json.dumps({"error": f"Weather service failed: {e}"})
-
-    return json.dumps({
-        "location": place["name"],
-        "temp_f": current["temperature_2m"],
-        "humidity": current["relative_humidity_2m"],
-        "wind_mph": current["wind_speed_10m"],
-    })
-
-# Tool 1: External Tool 
 def get_current_transits(target_date: str = None) -> dict:
-    """Calls the astrology API for current planetary positions.
+    """Calls the OpenEphemeris API for current planetary positions.
 
-    Returns a dict with either 'transits' (on success) or 'error' (on failure),
-    the latter containing an actionable message the model can relay to the user
-    or use to retry/adjust.
+    We reuse the natal-chart endpoint by treating "today" (or the given
+    date) as the subject's birth moment — the sign/degree/retrograde status
+    of each planet at that instant is exactly what a transit snapshot is.
+    Location doesn't affect a planet's zodiac sign or degree, so a fixed
+    placeholder location (0,0 / UTC) is used.
+
+    Returns a dict with either 'transits' (on success) or 'error' (on
+    failure), the latter containing an actionable message the model can
+    relay to the user or use to retry/adjust.
     """
     target_date = target_date or date.today().isoformat()
 
+    payload = {
+        "subject": {
+            "name": "current-transits-snapshot",
+            "birth_datetime": {"iso": f"{target_date}T12:00:00"},
+            "birth_location": {
+                "latitude": {"decimal": 0.0},
+                "longitude": {"decimal": 0.0},
+                "timezone": {"iana_name": "UTC"},
+            },
+        }
+    }
+
     try:
-        resp = requests.get(
-            "https://json.astrologyapi.com/v1/planets",
-            auth=(ASTROLOGY_API_USER_ID, ASTROLOGY_API_KEY),
-            params={"date": target_date},
+        resp = requests.post(
+            OPENEPHEMERIS_URL,
+            headers={
+                "X-OpenEphemeris-API-Key": OPENEPHEMERIS_API_KEY,
+                "Content-Type": "application/json",
+            },
+            json=payload,
             timeout=8,
         )
         resp.raise_for_status()
         data = resp.json()
-        print("RAW API RESPONSE:", data)
+        print("RAW API RESPONSE:", json.dumps(data, indent=2))
     except requests.exceptions.Timeout:
         return {"error": "The astrology data provider timed out. Try again in a moment."}
     except requests.exceptions.HTTPError as e:
-        return {"error": f"Astrology API rejected the request ({e.response.status_code}). "
-                          f"Check that the date is valid and formatted YYYY-MM-DD."}
+        body_preview = ""
+        try:
+            body_preview = e.response.text[:300]
+        except Exception:
+            pass
+        return {"error": f"OpenEphemeris rejected the request ({e.response.status_code}). "
+                          f"Check that target_date is formatted YYYY-MM-DD and the API key "
+                          f"is valid. Response: {body_preview}"}
     except requests.exceptions.RequestException:
-        return {"error": "Could not reach the astrology data provider. Check network/API key config."}
+        return {"error": "Could not reach OpenEphemeris. Check network/API key config."}
 
-    # Normalize into a compact, model-friendly shape
-    transits = [
-        {
-            "planet": p["name"],
-            "sign": p["sign"],
-            "degree": round(p["normDegree"], 1),
-            "retrograde": p.get("isRetro", False),
-        }
-        for p in data
-    ]
+    # TODO: adjust this once you see the real shape of `data` printed above.
+    # This is a best-guess parse based on common astrology-API conventions
+    # (a "planets" list with name/sign/degree/retrograde-ish fields).
+    try:
+        planets = data["planets"]
+        transits = [
+            {
+                "planet": p["name"],
+                "sign": p["sign"],
+                "degree": round(p.get("longitude", {}).get("decimal", p.get("degree", 0)), 1),
+                "retrograde": p.get("retrograde", False),
+            }
+            for p in planets
+        ]
+    except (KeyError, TypeError) as e:
+        return {"error": f"Got a response from OpenEphemeris but couldn't parse it as expected "
+                          f"(missing field: {e}). Check the RAW API RESPONSE printed in the "
+                          f"server logs and adjust the parsing in get_current_transits."}
+
     return {"date": target_date, "transits": transits}
+
+
+if __name__ == "__main__":
+    print(json.dumps(get_current_transits(), indent=2))
 
 
 # Tool 2: Original Tool 1
@@ -195,20 +195,6 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "get_weather",
-            "description": "Get the current weather (temperature, humidity, wind) for a city.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {"type": "string", "description": "City name, e.g. 'New York'"},
-                },
-                "required": ["location"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "get_current_transits",
             "description": (
                 "Fetches the real current positions of the Sun, Moon, and planets "
@@ -238,7 +224,6 @@ TOOLS = [
 
 # What the harness runs: tool name -> Python function.
 TOOL_MAP = {
-    "get_weather": get_weather,
     "get_current_transits": get_current_transits,
     "compatibility_score": compatibility_score,
 }
@@ -249,6 +234,7 @@ def run_tool(name: str, args: dict) -> str:
     if name not in TOOL_MAP:
         return json.dumps({"error": f"Unknown tool '{name}'. Available: {list(TOOL_MAP)}"})
     try:
-        return TOOL_MAP[name](**args)
+        result = TOOL_MAP[name](**args)
     except TypeError as e:
         return json.dumps({"error": f"Bad arguments for {name}: {e}"})
+    return json.dumps(result)
