@@ -1,202 +1,267 @@
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Gemini Web Tool Calling</title>
-        <style>
-            * {
-                box-sizing: border-box;
-                margin: 0;
-                padding: 0;
-            }
-            body {
-                font-family: system-ui, sans-serif;
-                height: 100vh;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                padding: 3rem 1rem;
-                background: url('https://img.magnific.com/premium-photo/universe-is-name-universe_1064589-92830.jpg?semt=ais_hybrid&w=740&q=80') center center / cover no-repeat fixed;
-            }
-            #container {
-                width: 100%;
-                max-width: 900px;
-                display: flex;
-                flex-direction: column;
-                border: 1px solid #e0e0e0;
-                border: 1px solid #000;
-                background-color: #fff;
-            }
-            #messages {
-                overflow-y: auto;
-                padding: 2rem;
-                display: flex;
-                flex-direction: column;
-                gap: 1.5rem;
-                min-height: 450px;
-                max-height: 70vh;
-            }
-            .msg {
-                line-height: 1.5;
-                max-width: 80%;
-            }
-            .msg.user {
-                align-self: flex-end;
-                text-align: right;
-            }
-            .msg .role {
-                font-size: 0.75rem;
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-                color: #999;
-                margin-bottom: 0.25rem;
-            }
-            .msg.loading .content {
-                color: #999;
-            }
-            #input-area {
-                display: flex;
-                gap: 1rem;
-                padding: 1.5rem;
-                /* border-top: 1px solid #e0e0e0; */
-                /* border-top: 1px solid #000; */
-                border: 1px solid #000;
-            }
-            #user-input {
-                flex: 1;
-                padding: 0.75rem 0;
-                border: none;
-                /* border-bottom: 1px solid #e0e0e0; */
-                /* border-bottom: 1px solid #000; */
-                border: 1px solid #000;
-                font-size: 1rem;
-                outline: none;
-            }
-            #user-input:focus {
-                /* border-bottom-color: #000; */
-                border-color: #000;
-            }
-            button {
-                padding: 0.75rem 1.5rem;
-                background: #000;
-                color: #fff;
-                border: none;
-                font-size: 0.75rem;
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-                cursor: pointer;
-            }
-            .tool {
-                font-family: ui-monospace, monospace;
-                font-size: 0.75rem;
-                color: #555;
-                background: #f5f5f5;
-                border-left: 3px solid #f59e0b;
-                padding: 0.5rem 0.75rem;
-                margin: 0.25rem 0 0.75rem;
-                white-space: pre-wrap;
-                word-break: break-word;
-            }
-            .tool .label {
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-                color: #b45309;
-            }
-            button:disabled {
-                opacity: 0.3;
-            }
-        </style>
-    </head>
-    <body>
-        <div id="container">
-            <div id="messages"></div>
-            <div id="input-area">
-                <input
-                    type="text"
-                    id="user-input"
-                    placeholder="Type a message..."
-                    autocomplete="off"
-                />
-                <button id="send-btn">Send</button>
-            </div>
-        </div>
-        <script>
-            const messages = document.getElementById("messages");
-            const userInput = document.getElementById("user-input");
-            const sendBtn = document.getElementById("send-btn");
-            let sessionId = null;
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pythia, ask the sky</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Instrument+Sans:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --void: #080a1c;
+    --dusk: #171246;
+    --moon: #ece6d6;
+    --gilt: #d9b46a;
+    --violet: #8b6cff;
+    --mist: rgba(236, 230, 214, 0.62);
+    --glass: rgba(16, 14, 46, 0.62);
+    --line: rgba(217, 180, 106, 0.22);
+    --serif: "Cormorant Garamond", Georgia, serif;
+    --sans: "Instrument Sans", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--sans);
+    color: var(--moon);
+    background: radial-gradient(ellipse at 50% 0%, var(--dusk) 0%, var(--void) 70%) fixed;
+    overflow: hidden;
+  }
+  #stars { position: fixed; inset: 0; z-index: 0; }
 
-            function addMessage(role, text, isLoading = false) {
-                const div = document.createElement("div");
-                div.className =
-                    "msg " +
-                    (role === "you" ? "user" : "Pythia") +
-                    (isLoading ? " loading" : "");
-                div.innerHTML =
-                    '<div class="role">' +
-                    role +
-                    '</div><div class="content">' +
-                    text +
-                    "</div>";
-                messages.appendChild(div);
-                messages.scrollTop = messages.scrollHeight;
-                return div;
-            }
+  /* Orreries: rings and planets drifting in from each edge */
+  .orrery { position: fixed; top: 50%; width: 640px; height: 640px; z-index: 1; pointer-events: none; }
+  .orrery.left { left: -400px; transform: translateY(-50%); }
+  .orrery.right { right: -400px; transform: translateY(-50%); }
+  .orbit { position: absolute; border: 1px solid var(--line); border-radius: 50%; animation: spin linear infinite; }
+  .right .orbit { animation-direction: reverse; }
+  .planet { position: absolute; top: -9px; left: 50%; width: 18px; height: 18px; margin-left: -9px; border-radius: 50%; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .sun { position: absolute; inset: 42%; border-radius: 50%;
+    background: radial-gradient(circle, #fff3cf 0%, var(--gilt) 45%, transparent 72%);
+    filter: blur(2px); animation: pulse 6s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.18); opacity: .8; } }
 
-            async function send() {
-                const text = userInput.value.trim();
-                if (!text) return;
+  /* Shell */
+  #shell { position: relative; z-index: 2; height: 100%; max-width: 780px; margin: 0 auto;
+    display: flex; flex-direction: column; padding: 1.25rem 1rem 1rem; }
+  header { text-align: center; padding: .5rem 0 1rem; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(2.4rem, 6vw, 3.4rem);
+    letter-spacing: .04em; background: linear-gradient(180deg, #fff3cf, var(--gilt));
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tag { font-family: var(--serif); font-style: italic; font-size: 1.15rem; color: var(--mist); }
 
-                userInput.value = "";
-                sendBtn.disabled = true;
-                addMessage("you", text);
-                const loading = addMessage("Pythia", "Thinking...", true);
+  #chat { flex: 1; min-height: 0; display: flex; flex-direction: column;
+    background: var(--glass); border: 1px solid var(--line); border-radius: 18px;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); overflow: hidden; }
+  #messages { flex: 1; overflow-y: auto; padding: 1.4rem; display: flex; flex-direction: column; gap: 1rem; }
 
-                try {
-                    const res = await fetch("/chat", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            message: text,
-                            session_id: sessionId,
-                        }),
-                    });
-                    const data = await res.json();
-                    sessionId = data.session_id;
+  /* Landing */
+  #landing { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; gap: 1.2rem; padding: 0 1rem 4rem; }
+  #landing h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(1.6rem, 4vw, 2.2rem); line-height: 1.2; max-width: 22ch; }
+  #landing p { color: var(--mist); line-height: 1.6; max-width: 52ch; }
+  #explore { background: linear-gradient(135deg, var(--gilt), #b98a3e); color: #1a1230; border: 0; border-radius: 999px;
+    padding: 1rem 2.6rem; font: 500 1.1rem var(--sans); cursor: pointer; margin-top: .6rem;
+    box-shadow: 0 0 34px rgba(217, 180, 106, .35); transition: transform .2s, box-shadow .2s; }
+  #explore:hover, #explore:focus-visible { transform: scale(1.05); box-shadow: 0 0 48px rgba(217, 180, 106, .6); outline: none; }
+  .hidden { display: none !important; }
 
-                    // Show each tool the harness ran, above Pythia's answer
-                    for (const call of data.tool_calls || []) {
-                        const div = document.createElement("div");
-                        div.className = "tool";
-                        const label = document.createElement("span");
-                        label.className = "label";
-                        label.textContent = "tool call  ";
-                        div.appendChild(label);
-                        div.appendChild(
-                            document.createTextNode(
-                                call.name + "(" + JSON.stringify(call.args) + ")\n→ " + call.result,
-                            ),
-                        );
-                        messages.insertBefore(div, loading);
-                    }
-                    loading.querySelector(".content").textContent =
-                        data.response;
-                    loading.classList.remove("loading");
-                } catch (e) {
-                    loading.querySelector(".content").textContent =
-                        "Error: " + e.message;
-                    loading.classList.remove("loading");
-                }
-                sendBtn.disabled = false;
-                userInput.focus();
-            }
+  /* Messages */
+  .msg { max-width: 86%; line-height: 1.55; white-space: pre-wrap; word-wrap: break-word; }
+  .msg.user { align-self: flex-end; background: linear-gradient(135deg, #4b38b8, var(--violet));
+    padding: .65rem 1rem; border-radius: 16px 16px 4px 16px; }
+  .msg.bot { align-self: flex-start; padding-left: .9rem; border-left: 2px solid var(--gilt); }
+  .msg.bot .name { font-family: var(--serif); color: var(--gilt); font-size: 1.05rem; margin-bottom: .1rem; }
+  .thinking .content::after { content: ""; display: inline-block; width: .9em; height: .9em; margin-left: .4em;
+    border-radius: 50%; border: 2px solid var(--gilt); border-top-color: transparent; animation: spin .8s linear infinite; vertical-align: -.1em; }
 
-            sendBtn.addEventListener("click", send);
-            userInput.addEventListener("keydown", function (e) {
-                if (e.key === "Enter") send();
-            });
-            userInput.focus();
-        </script>
-    </body>
+  /* Tool call cards */
+  details.tool { align-self: flex-start; max-width: 86%; background: rgba(217, 180, 106, .07);
+    border: 1px solid var(--line); border-radius: 12px; font-size: .85rem; }
+  details.tool summary { cursor: pointer; padding: .55rem .9rem; color: var(--gilt); list-style: none; }
+  details.tool summary::-webkit-details-marker { display: none; }
+  details.tool summary::before { content: "✦"; margin-right: .5rem; }
+  details.tool[open] summary { border-bottom: 1px solid var(--line); }
+  details.tool pre { padding: .7rem .9rem; overflow-x: auto; color: var(--mist);
+    font: .78rem/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+  details.tool.err { border-color: rgba(255, 122, 89, .5); }
+  details.tool.err summary { color: #ff9a7d; }
+
+  /* Input */
+  form { display: flex; gap: .6rem; padding: .9rem; border-top: 1px solid var(--line); }
+  #user-input { flex: 1; background: rgba(8, 10, 28, .7); border: 1px solid var(--line); color: var(--moon);
+    border-radius: 999px; padding: .8rem 1.2rem; font: inherit; }
+  #user-input:focus-visible { outline: 2px solid var(--violet); border-color: transparent; }
+  #user-input::placeholder { color: rgba(236, 230, 214, .4); }
+  button.send { background: linear-gradient(135deg, var(--gilt), #b98a3e); color: #1a1230; border: 0;
+    border-radius: 999px; padding: 0 1.5rem; font: 500 .95rem var(--sans); cursor: pointer; }
+  button.send:disabled { opacity: .4; cursor: default; }
+  button.send:focus-visible { outline: 2px solid var(--moon); outline-offset: 2px; }
+  footer { display: flex; justify-content: space-between; align-items: center; padding: .6rem .3rem 0;
+    font-size: .8rem; color: rgba(236, 230, 214, .45); }
+  #reset { background: none; border: 1px solid var(--line); color: var(--mist); border-radius: 999px;
+    padding: .3rem .9rem; font: inherit; cursor: pointer; }
+  #reset:hover, #reset:focus-visible { border-color: var(--gilt); color: var(--gilt); outline: none; }
+
+  @media (max-width: 1150px) { .orrery { display: none; } }
+  @media (prefers-reduced-motion: reduce) { .orbit, .sun, .thinking .content::after { animation: none; } }
+</style>
+</head>
+<body>
+<canvas id="stars" aria-hidden="true"></canvas>
+
+<div class="orrery left" aria-hidden="true">
+  <div class="sun"></div>
+  <div class="orbit" style="inset:30%;animation-duration:38s"><div class="planet" style="background:radial-gradient(circle at 30% 30%,#fff,#b8b2a4)"></div></div>
+  <div class="orbit" style="inset:18%;animation-duration:70s"><div class="planet" style="width:26px;height:26px;margin-left:-13px;top:-13px;background:radial-gradient(circle at 30% 30%,#ffd9a8,#c4703a)"></div></div>
+  <div class="orbit" style="inset:6%;animation-duration:120s"><div class="planet" style="width:34px;height:34px;margin-left:-17px;top:-17px;background:radial-gradient(circle at 30% 30%,#f3e2b8,#b58a4a 60%,#6d4d24)"></div></div>
+  <div class="orbit" style="inset:0;animation-duration:200s"><div class="planet" style="background:radial-gradient(circle at 30% 30%,#b6e3ff,#3f7fbf)"></div></div>
+</div>
+
+<div class="orrery right" aria-hidden="true">
+  <div class="sun"></div>
+  <div class="orbit" style="inset:28%;animation-duration:46s"><div class="planet" style="background:radial-gradient(circle at 30% 30%,#ffb08a,#c2452a)"></div></div>
+  <div class="orbit" style="inset:16%;animation-duration:84s"><div class="planet" style="width:28px;height:28px;margin-left:-14px;top:-14px;background:radial-gradient(circle at 30% 30%,#e9d6ff,#8b6cff 60%,#4b38b8)"></div></div>
+  <div class="orbit" style="inset:5%;animation-duration:150s"><div class="planet" style="width:22px;height:22px;margin-left:-11px;top:-11px;background:radial-gradient(circle at 30% 30%,#d5fff3,#3fbfa0)"></div></div>
+  <div class="orbit" style="inset:0;animation-duration:240s"><div class="planet" style="background:radial-gradient(circle at 30% 30%,#fff,#9aa6d8)"></div></div>
+</div>
+
+<div id="shell">
+  <header>
+    <h1>Pythia</h1>
+    <p class="tag">Ask the sky before you act.</p>
+  </header>
+
+  <section id="landing">
+    <h2>An astrology assistant that checks the real sky.</h2>
+    <p>Pythia pulls live planetary positions, scores how two signs get along, and tells you whether today's retrogrades favor your next move. Every tool it uses shows up in the chat, so you can see where each answer came from.</p>
+    <button id="explore" type="button">Let's Explore!</button>
+  </section>
+
+  <main id="chat" class="hidden">
+    <div id="messages" aria-live="polite"></div>
+    <form id="form">
+      <input id="user-input" type="text" placeholder="Ask about the sky, a sign, or a decision..." autocomplete="off" aria-label="Message Pythia" />
+      <button class="send" id="send-btn" type="submit">Send</button>
+    </form>
+  </main>
+
+  <footer id="foot" class="hidden">
+    <span>For entertainment and reflection, not advice.</span>
+    <button id="reset" type="button">New chat</button>
+  </footer>
+</div>
+
+<script>
+  // ----- Starfield -----
+  const canvas = document.getElementById("stars");
+  const ctx = canvas.getContext("2d");
+  let stars = [];
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function resize() {
+    canvas.width = innerWidth; canvas.height = innerHeight;
+    stars = Array.from({ length: Math.floor(innerWidth * innerHeight / 5500) }, () => ({
+      x: Math.random() * canvas.width, y: Math.random() * canvas.height,
+      r: Math.random() * 1.3 + .2, p: Math.random() * Math.PI * 2, s: Math.random() * .02 + .005 }));
+  }
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const st of stars) {
+      st.p += st.s;
+      ctx.globalAlpha = still ? .7 : .35 + .55 * Math.abs(Math.sin(st.p));
+      ctx.fillStyle = "#ece6d6";
+      ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, 7); ctx.fill();
+    }
+    if (!still) requestAnimationFrame(draw);
+  }
+  addEventListener("resize", () => { resize(); if (still) draw(); });
+  resize(); draw();
+
+  // ----- Chat -----
+  const messagesEl = document.getElementById("messages");
+  const input = document.getElementById("user-input");
+  const sendBtn = document.getElementById("send-btn");
+  const form = document.getElementById("form");
+  let sessionId = null;
+
+  const TOOL_LABELS = {
+    get_current_transits: "Checked the sky",
+    compatibility_score: "Scored the match",
+    decision_timing_advisor: "Checked the timing",
+  };
+
+  function scroll() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+
+  function addUser(text) {
+    const d = document.createElement("div");
+    d.className = "msg user"; d.textContent = text;
+    messagesEl.appendChild(d); scroll();
+  }
+  function addBot(text, thinking) {
+    const d = document.createElement("div");
+    d.className = "msg bot" + (thinking ? " thinking" : "");
+    d.innerHTML = '<div class="name">Pythia</div><div class="content"></div>';
+    d.querySelector(".content").textContent = text;
+    messagesEl.appendChild(d); scroll();
+    return d;
+  }
+  function addTool(call, before) {
+    let pretty = call.result;
+    let isErr = false;
+    try { const parsed = JSON.parse(call.result); isErr = !!parsed.error; pretty = JSON.stringify(parsed, null, 2); } catch (e) {}
+    const det = document.createElement("details");
+    det.className = "tool" + (isErr ? " err" : "");
+    const sum = document.createElement("summary");
+    sum.textContent = (isErr ? "Tool error: " : (TOOL_LABELS[call.name] || "Used") + ": ") + call.name;
+    const pre = document.createElement("pre");
+    pre.textContent = "arguments\n" + JSON.stringify(call.args, null, 2) + "\n\nresult\n" + pretty;
+    det.append(sum, pre);
+    messagesEl.insertBefore(det, before);
+  }
+
+  async function send(text) {
+    text = text.trim();
+    if (!text) return;
+    input.value = ""; sendBtn.disabled = true;
+    addUser(text);
+    const bot = addBot("Consulting the stars", true);
+    try {
+      const res = await fetch("/chat", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, session_id: sessionId }) });
+      const data = await res.json();
+      sessionId = data.session_id;
+      for (const call of data.tool_calls || []) addTool(call, bot);
+      bot.querySelector(".content").textContent = data.response;
+    } catch (e) {
+      bot.querySelector(".content").textContent = "Couldn't reach the server (" + e.message + "). Check that it's running, then try again.";
+    }
+    bot.classList.remove("thinking");
+    sendBtn.disabled = false; input.focus(); scroll();
+  }
+
+  form.addEventListener("submit", (e) => { e.preventDefault(); send(input.value); });
+
+  const GREETING = "Hello, I'm Pythia. Try asking: \"Is Mercury retrograde?\", \"How compatible are a Leo and a Pisces as roommates?\", or \"I'm a Capricorn, should I ask for a raise this week?\"";
+
+  function openChat() {
+    messagesEl.innerHTML = "";
+    addBot(GREETING, false);
+    input.focus();
+  }
+
+  document.getElementById("explore").addEventListener("click", () => {
+    document.getElementById("landing").classList.add("hidden");
+    document.getElementById("chat").classList.remove("hidden");
+    document.getElementById("foot").classList.remove("hidden");
+    openChat();
+  });
+
+  document.getElementById("reset").addEventListener("click", async () => {
+    if (sessionId) { try { await fetch("/clear?session_id=" + encodeURIComponent(sessionId), { method: "POST" }); } catch (e) {} }
+    sessionId = null;
+    openChat();
+  });
+</script>
+</body>
 </html>

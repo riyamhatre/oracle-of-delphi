@@ -1,5 +1,7 @@
 import json
+import os
 import uuid
+from datetime import date
 from pathlib import Path
 
 import litellm
@@ -12,11 +14,39 @@ from tools import TOOLS, run_tool
 
 # --- Config ---
 
-SYSTEM_PROMPT = (
-    "You are a helpful assistant. When a question depends on the weather or "
-    "outdoor conditions, call get_weather first, then answer in a sentence."
-)
 MAX_TOOL_ROUNDS = 5
+
+
+def build_system_prompt() -> str:
+    """Built per session so the date is never stale on a long-running server."""
+    return (
+        "You are Pythia, a friendly astrology assistant for people who want a "
+        "fun, grounded read on timing and relationships. "
+        f"Today's date is {date.today().isoformat()}.\n\n"
+        "You have three tools. Always use them instead of guessing:\n"
+        "- get_current_transits: real planetary positions and retrogrades. Use it "
+        "for any question about the current sky, a specific planet's sign or "
+        "retrograde status, or a horoscope-style reading.\n"
+        "- compatibility_score: a weighted rubric score for two zodiac signs in a "
+        "given context (romantic, friendship, roommates, coworkers). Use it for any "
+        "'how compatible are we' question. If the context isn't stated, ask.\n"
+        "- decision_timing_advisor: checks current retrogrades against a rules table "
+        "for a decision (send a message, ask for a raise, start a project, hard "
+        "conversation, make a purchase, sign a contract). Use it for 'is now a good "
+        "time to...' questions. It fetches transits itself.\n\n"
+        "Rules:\n"
+        "- If a tool needs a zodiac sign and the user hasn't told you theirs, ask "
+        "for it. Never invent one. Remember signs the user has already given you.\n"
+        "- Never state planetary positions or retrogrades from memory.\n"
+        "- If a tool returns an error, explain it plainly and either retry with "
+        "corrected arguments or tell the user what to fix.\n"
+        "- Report tool results faithfully (scores, verdicts, which planets are "
+        "retrograde), then add a short, warm interpretation. Keep answers concise.\n"
+        "- For off-topic questions, answer briefly and steer back to what you can "
+        "help with.\n"
+        "- This is for entertainment and reflection, not professional advice."
+    )
+
 
 # --- The Harness ---
 
@@ -42,11 +72,14 @@ def run_agent(messages: list[dict]) -> tuple[str, list[dict]]:
         messages += [reply.model_dump()]
 
         if not reply.tool_calls:
-            return reply.content, tool_calls
+            return reply.content or "", tool_calls
 
         # The harness, not the model, runs each tool and appends the result
         for call in reply.tool_calls:
-            args = json.loads(call.function.arguments)
+            try:
+                args = json.loads(call.function.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {}
             result = run_tool(call.function.name, args)
             tool_calls += [{"name": call.function.name, "args": args, "result": result}]
 
@@ -86,15 +119,20 @@ def chat(request: ChatRequest):
     # Get or create the session
     session_id = request.session_id or str(uuid.uuid4())
     if session_id not in sessions:
-        sessions[session_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        sessions[session_id] = [{"role": "system", "content": build_system_prompt()}]
+
+    messages = sessions[session_id]
+    turn_start = len(messages)  # so a failed turn can be rolled back cleanly
 
     # Append user's message to the context
-    sessions[session_id] += [{"role": "user", "content": request.message}]
+    messages += [{"role": "user", "content": request.message}]
 
     try:
-        response, tool_calls = run_agent(sessions[session_id])
+        response, tool_calls = run_agent(messages)
     except Exception as e:
         # Auth, billing, a model that is not running: show it in the chat, not as a 500.
+        # Roll back this turn so a half-finished tool exchange can't corrupt the session.
+        del messages[turn_start:]
         response, tool_calls = f"Model call failed: {type(e).__name__}: {str(e)[:300]}", []
 
     return ChatResponse(response=response, session_id=session_id, tool_calls=tool_calls)
@@ -107,4 +145,4 @@ def clear(session_id: str | None = None):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
