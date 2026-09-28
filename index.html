@@ -17,6 +17,7 @@
                 justify-content: center;
                 align-items: center;
                 padding: 3rem 1rem;
+                background: url('https://img.magnific.com/premium-photo/universe-is-name-universe_1064589-92830.jpg?semt=ais_hybrid&w=740&q=80') center center / cover no-repeat fixed;
             }
             #container {
                 width: 100%;
@@ -24,6 +25,8 @@
                 display: flex;
                 flex-direction: column;
                 border: 1px solid #e0e0e0;
+                border: 1px solid #000;
+                background-color: #fff;
             }
             #messages {
                 overflow-y: auto;
@@ -56,18 +59,23 @@
                 display: flex;
                 gap: 1rem;
                 padding: 1.5rem;
-                border-top: 1px solid #e0e0e0;
+                /* border-top: 1px solid #e0e0e0; */
+                /* border-top: 1px solid #000; */
+                border: 1px solid #000;
             }
             #user-input {
                 flex: 1;
                 padding: 0.75rem 0;
                 border: none;
-                border-bottom: 1px solid #e0e0e0;
+                /* border-bottom: 1px solid #e0e0e0; */
+                /* border-bottom: 1px solid #000; */
+                border: 1px solid #000;
                 font-size: 1rem;
                 outline: none;
             }
             #user-input:focus {
-                border-bottom-color: #000;
+                /* border-bottom-color: #000; */
+                border-color: #000;
             }
             button {
                 padding: 0.75rem 1.5rem;
@@ -123,7 +131,7 @@
                 const div = document.createElement("div");
                 div.className =
                     "msg " +
-                    (role === "you" ? "user" : "assistant") +
+                    (role === "you" ? "user" : "Pythia") +
                     (isLoading ? " loading" : "");
                 div.innerHTML =
                     '<div class="role">' +
@@ -143,7 +151,7 @@
                 userInput.value = "";
                 sendBtn.disabled = true;
                 addMessage("you", text);
-                const loading = addMessage("assistant", "Thinking...", true);
+                const loading = addMessage("Pythia", "Thinking...", true);
 
                 try {
                     const res = await fetch("/chat", {
@@ -157,7 +165,7 @@
                     const data = await res.json();
                     sessionId = data.session_id;
 
-                    // Show each tool the harness ran, above the assistant's answer
+                    // Show each tool the harness ran, above Pythia's answer
                     for (const call of data.tool_calls || []) {
                         const div = document.createElement("div");
                         div.className = "tool";
