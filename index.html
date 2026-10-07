@@ -73,6 +73,9 @@
     padding: .65rem 1rem; border-radius: 16px 16px 4px 16px; }
   .msg.bot { align-self: flex-start; padding-left: .9rem; border-left: 2px solid var(--gilt); }
   .msg.bot .name { font-family: var(--serif); color: var(--gilt); font-size: 1.05rem; margin-bottom: .1rem; }
+  .msg.bot .content { white-space: normal; }
+  .msg.bot ul { margin: .4rem 0 .4rem 1.3rem; }
+  .msg.bot li { margin-bottom: .25rem; }
   .thinking .content::after { content: ""; display: inline-block; width: .9em; height: .9em; margin-left: .4em;
     border-radius: 50%; border: 2px solid var(--gilt); border-top-color: transparent; animation: spin .8s linear infinite; vertical-align: -.1em; }
 
@@ -178,6 +181,32 @@
   addEventListener("resize", () => { resize(); if (still) draw(); });
   resize(); draw();
 
+  // ----- Markdown rendering (escape first, then re-introduce only known tags) -----
+  function renderMarkdown(text) {
+    const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    let html = esc
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*(.+?)\*/g, "<em>$1</em>");
+
+    const lines = html.split("\n");
+    let out = [];
+    let inList = false;
+    for (const line of lines) {
+      const bullet = line.match(/^\s*\*\s+(.*)/);
+      if (bullet) {
+        if (!inList) { out.push("<ul>"); inList = true; }
+        out.push("<li>" + bullet[1] + "</li>");
+      } else {
+        if (inList) { out.push("</ul>"); inList = false; }
+        out.push(line);
+      }
+    }
+    if (inList) out.push("</ul>");
+
+    return out.join("\n").replace(/\n{2,}/g, "<br><br>").replace(/\n/g, "<br>");
+  }
+
   // ----- Chat -----
   const messagesEl = document.getElementById("messages");
   const input = document.getElementById("user-input");
@@ -202,7 +231,7 @@
     const d = document.createElement("div");
     d.className = "msg bot" + (thinking ? " thinking" : "");
     d.innerHTML = '<div class="name">Pythia</div><div class="content"></div>';
-    d.querySelector(".content").textContent = text;
+    d.querySelector(".content").innerHTML = renderMarkdown(text);
     messagesEl.appendChild(d); scroll();
     return d;
   }
@@ -232,7 +261,7 @@
       const data = await res.json();
       sessionId = data.session_id;
       for (const call of data.tool_calls || []) addTool(call, bot);
-      bot.querySelector(".content").textContent = data.response;
+      bot.querySelector(".content").innerHTML = renderMarkdown(data.response);
     } catch (e) {
       bot.querySelector(".content").textContent = "Couldn't reach the server (" + e.message + "). Check that it's running, then try again.";
     }
